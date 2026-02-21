@@ -53,6 +53,9 @@ const mergeLyrics = (lines) => {
         const trans = transLines.find(t => isTimeOverlap(line, t));
         if (trans) {
             line.translatedLyric = trans.text;
+        } else if (!line.translatedLyric && transLines.length > 0) {
+            // 如果没有匹配的时间重叠，但有翻译行，尝试放宽条件？
+            // 或者保留 parseTTML 解析出的 spanTranslatedLyric
         }
         
         // 寻找匹配的罗马音
@@ -175,6 +178,8 @@ const parseTTML = (ttmlContent) => {
             
             let words = [];
             let textContent = "";
+            let spanTranslatedLyric = "";
+            let spanRomanLyric = "";
 
             if (spans.length > 0) {
                  for (let j = 0; j < spans.length; j++) {
@@ -184,7 +189,16 @@ const parseTTML = (ttmlContent) => {
                     const text = span.textContent || "";
                     
                     // 如果 span 有 role，覆盖 p 的 role (虽然不常见)
-                    // const spanRole = span.getAttribute("ttm:role") || span.getAttribute("role");
+                    const spanRole = span.getAttribute("ttm:role") || span.getAttribute("role");
+
+                    if (spanRole === 'x-translation' || spanRole === 'translation') {
+                        spanTranslatedLyric += text;
+                        continue;
+                    }
+                    if (spanRole === 'x-roman' || spanRole === 'roman') {
+                        spanRomanLyric += text;
+                        continue;
+                    }
 
                     if (spanBegin !== null && spanEnd !== null) {
                          words.push({
@@ -219,8 +233,8 @@ const parseTTML = (ttmlContent) => {
                 text: textContent,
                 role: role,
                 isDuet: isDuet, // 添加 isDuet 属性
-                translatedLyric: "",
-                romanLyric: ""
+                translatedLyric: spanTranslatedLyric,
+                romanLyric: spanRomanLyric
             });
         }
         

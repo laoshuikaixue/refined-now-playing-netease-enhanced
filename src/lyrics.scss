@@ -99,14 +99,14 @@ body.original-lyric-bold {
 	}*/
     max-width: calc(100% - 60px);
 	$idle-opacity: 0.4;
-	&[offset='0'] > div{ 
+	&[offset='0'] > div, &.highlight-force > div{ 
 		opacity: 0.6;
 		mix-blend-mode: plus-lighter;
 		&.rnp-lyrics-line-original {
 			opacity: 1;
 		}
 	}
-	&:not([offset='0']) > div{
+	&:not([offset='0']):not(.highlight-force) > div{
 		opacity: $idle-opacity;
 		transition-delay: 0s;
 		&.rnp-lyrics-line-romaji {
@@ -145,7 +145,7 @@ body.original-lyric-bold {
 	}
 
 	// Interlude Dots	
-	&[offset='0'] > div{ 
+	&[offset='0'] > div, &.highlight-force > div{ 
 		.rnp-interlude-dot {
 			opacity: 0.9;
 			transform: scale(1);
@@ -153,7 +153,7 @@ body.original-lyric-bold {
 			transition-timing-function: linear, ease;
 		}
 	}
-	&:not([offset='0']) > div{
+	&:not([offset='0']):not(.highlight-force) > div{
 		.rnp-interlude-dot {
 			opacity: 0.2;
 			transform: scale(0.9);
@@ -224,7 +224,7 @@ body.rnp-karaoke-animation-float .rnp-lyrics-line {
 		will-change: opacity, transform;
 	}
 	$idle-opacity: 0.4;
-	&[offset='0'] > div{ 
+	&[offset='0'] > div, &.highlight-force > div{ 
 		&.rnp-lyrics-line-karaoke {
 			opacity: 1;
 			.rnp-karaoke-word:not(.lyricbar-karaoke-word) {
@@ -235,7 +235,7 @@ body.rnp-karaoke-animation-float .rnp-lyrics-line {
 			}
 		}
 	}
-	&:not([offset='0']) > div{
+	&:not([offset='0']):not(.highlight-force) > div{
 		&.rnp-lyrics-line-karaoke {
 			opacity: 1;
 			.rnp-karaoke-word:not(.lyricbar-karaoke-word) {
@@ -291,7 +291,7 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 			}
 		}
 	}
-	&[offset='0'] > div{ 
+	&[offset='0'] > div, &.highlight-force > div{ 
 		&.rnp-lyrics-line-karaoke {
 			.rnp-karaoke-word {
 				transform: translateY(-1px);
@@ -306,7 +306,7 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 			}
 		}
 	}
-	&:not([offset='0']) > div{
+	&:not([offset='0']):not(.highlight-force) > div{
 		&.rnp-lyrics-line-karaoke {
 			opacity: 1;
 			.rnp-karaoke-word {
@@ -363,7 +363,9 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 	}
 
 	// 激活状态：展开显示
-	&[offset='0'] {
+	// 当 offset='0' 时，是作为当前行被选中（极少数情况，或者 JS 没有进行 visualCurrent 修正）
+	// 当 offset='1' 时，是因为 JS 将 visualCurrent 指向了上一行，所以当前背景人声行的 offset 变为 1
+	&[offset='0'], &[offset='1'] {
 		pointer-events: auto;
 		z-index: 1;
 

@@ -334,47 +334,148 @@ export function Lyrics(props) {
 		if (scrollingMode) {
 			current = Math.min(Math.max(scrollingFocusLine ?? 0, 0), lyrics.length - 1);
 		}
+		
+		// 如果当前行是背景人声，则将 current 指向上一行主歌词
+		// 这样视觉焦点会保持在主歌词上，而背景人声通过 offset 来控制显示
+		// 配合 CSS 逻辑：offset=1 时显示背景人声（因为 current 指向上一行，背景人声是 current+1，offset=1）
+		let visualCurrent = current;
+		let isBGActive = false;
+		if (lyrics[current]?.isBG && current > 0 && !scrollingMode) {
+			visualCurrent = current - 1;
+			isBGActive = true;
+			transforms[visualCurrent].highlightForce = true;
+		}
 
 		if (!scrollingMode) recalcHeightOfItems();
 		//console.log(currentLine, current);
 		//transforms[current].top = containerHeight / 2 - heightOfItems.current[current] / 2;
-		transforms[current].top = 
+		
+		// 无论是否背景人声，都按照 visualCurrent 进行居中计算
+		transforms[visualCurrent].top = 
 			containerRef.current.clientHeight * (currentLyricAlignmentPercentage * 0.01) - 
-			heightOfItems.current[current] / 2;
-		transforms[current].scale = 1;
-		transforms[current].delay = delayByOffset(0);
-		transforms[current].blur = blurByOffset(0);
-		const currentLineHeight = heightOfItems.current[current];
-		if (lyrics[current]?.isInterlude && !scrollingMode) {
+			heightOfItems.current[visualCurrent] / 2;
+
+		transforms[visualCurrent].scale = 1;
+		transforms[visualCurrent].delay = delayByOffset(0);
+		transforms[visualCurrent].blur = blurByOffset(0);
+		transforms[visualCurrent].opacity = 1;
+		
+		// 确保 visualCurrent 始终高亮，即使 isBGActive 为 true
+		// 因为我们已经强制将 visualCurrent 设置为 transforms[visualCurrent] 的基础属性
+		// 所以不需要额外操作。
+		
+		const currentLineHeight = heightOfItems.current[visualCurrent];
+		if (lyrics[visualCurrent]?.isInterlude && !scrollingMode) {
 			// temporary heighten the interlude line
-			heightOfItems.current[current] = currentLineHeight + 50;
+			heightOfItems.current[visualCurrent] = currentLineHeight + 50;
 		}
-		// all lines before current
-		for (let i = current - 1; i >= 0; i--) {
-			transforms[i].scale = scaleByOffset(current - i);
-			transforms[i].blur = blurByOffset(i - current);
-			transforms[i].opacity = opacityByOffset(i - current);
-			let scaledHeight = heightOfItems.current[i] * transforms[i].scale;
+		
+		// all lines before visualCurrent
+		for (let i = visualCurrent - 1; i >= 0; i--) {
+			let effectiveOffset = visualCurrent - i;
+			
+			// 如果 visualCurrent 本身是被背景人声修正过的（即 isBGActive 为 true）
+			// 那么 visualCurrent 本身（即主歌词）的 scale/blur/opacity 已经被强制为 1/0/1 了
+			// 但是，visualCurrent 之前的行呢？
+			// 比如，如果是背景人声在播放，visualCurrent 是上一行主歌词
+			// 那么 visualCurrent-1 应该是 opacity 衰减的
+			// 这里的 effectiveOffset 计算是 visualCurrent - i，所以如果是 i = visualCurrent - 1，则 offset = 1
+			// 这符合逻辑：上一行主歌词应该开始衰减
+
+			transforms[i].scale = scaleByOffset(effectiveOffset);
+			transforms[i].blur = blurByOffset(-effectiveOffset);
+			transforms[i].opacity = lyrics[i].isBG ? 0 : opacityByOffset(-effectiveOffset);
+			let scaledHeight = lyrics[i].isBG ? 0 : heightOfItems.current[i] * transforms[i].scale;
 			const currentSpace = lyrics[i].isBG ? 0 : space;
 			transforms[i].top = transforms[i + 1].top - scaledHeight - currentSpace;
-			transforms[i].delay = delayByOffset(i - current);
-			setRotateTransform(transforms[i], transforms[current].top - transforms[i].top, heightOfItems.current[i] * transforms[i].scale);
+			transforms[i].delay = delayByOffset(i - visualCurrent);
+			setRotateTransform(transforms[i], transforms[visualCurrent].top - transforms[i].top, heightOfItems.current[i] * transforms[i].scale);
 		}
-		// all lines after current
-		for (let i = current + 1; i < lyrics.length; i++) {
-			transforms[i].scale = scaleByOffset(i - current);
-			transforms[i].blur = blurByOffset(i - current);
-			transforms[i].opacity = opacityByOffset(i - current);
-			const previousScaledHeight = heightOfItems.current[i - 1] * transforms[i - 1].scale;
-			const currentSpace = lyrics[i].isBG ? 0 : space;
-			transforms[i].top = transforms[i - 1].top + previousScaledHeight + currentSpace;
-			transforms[i].delay = delayByOffset(i - current);
-			setRotateTransform(transforms[i], transforms[current].top - transforms[i].top, heightOfItems.current[i] * transforms[i].scale);
+		// all lines after visualCurrent
+		for (let i = visualCurrent + 1; i < lyrics.length; i++) {
+			let effectiveOffset = i - visualCurrent;
+			
+			// 背景人声行的特殊处理
+			// 修正 effectiveOffset，让它看起来更像是附属于 visualCurrent
+			// 但我们仍然需要正确的 blur 和 opacity 计算，所以 effectiveOffset 应该保持？
+			// 实际上，背景人声应该紧贴上一行，所以它的 effectiveOffset 对于 scale/blur/opacity 来说可能需要调整
+			// 但对于 layout 来说，它是独立的
+			
+			if (lyrics[i].isBG) {
+				// 如果是背景人声，我们希望它紧贴上一行
+				// 并且不占位（height=0 in CSS），所以我们需要手动计算它的位置
+				// 上一行的 top + 上一行的高度 + 间距的一半？
+				
+				// 计算上一行的底部位置
+				const prevLineHeight = heightOfItems.current[i - 1] * transforms[i - 1].scale;
+				const prevLineTop = transforms[i - 1].top;
+				
+				// 设定背景人声的位置：紧贴上一行底部，稍微有点间距
+				// 因为背景人声在 CSS 中 height=0 且 translateY(-50%)，所以我们需要把 top 设为上一行底部 + 自身实际高度的一半？
+				// 为了简单，我们假设背景人声高度约为 fontSize * 0.6
+				const bgLineEstimatedHeight = fontSize * 0.6;
+				
+				// 调整间距：如果是背景人声，使用较小的间距
+				const bgSpace = space * 0.2; 
+				
+				transforms[i].top = prevLineTop + prevLineHeight + bgSpace + bgLineEstimatedHeight / 2;
+				
+				// 视觉属性调整
+				// 如果是当前正在唱的背景人声 (i == current)，或者是 visualCurrent 的下一行 (i == visualCurrent + 1)
+				// 此时它应该完全显示
+				
+				// 但注意，我们在 CSS 中对 offset='1' 做了特殊处理
+				// 这里我们需要确保 scale/blur/opacity 计算出的结果是合理的
+				
+				// 强制调整 effectiveOffset 以获得正确的视觉效果
+				// 如果它是紧跟 visualCurrent 的背景人声，让它看起来像 offset 0.5?
+				// 不，CSS 中 offset='1' 已经处理了显示逻辑
+				// 这里主要处理 scale 和 blur
+				
+				// 保持 effectiveOffset = 1，让它稍微小一点，稍微模糊一点（如果 CSS 没覆盖的话）
+				// 但我们在 CSS 中强制了 transform: scale(1) !important for offset='1'
+				// 所以这里的 scale 并不重要，重要的是 top 位置
+			} else {
+				// 正常行
+				const previousScaledHeight = heightOfItems.current[i - 1] * transforms[i - 1].scale;
+				// 如果上一行是背景人声，因为背景人声 height=0 (CSS) 且不占位 (JS space=0)
+				// 所以我们需要忽略背景人声的高度？
+				// 不，我们在上一个循环中计算背景人声位置时，并没有改变 transforms[i-1] 的 top
+				// 但对于当前行（非背景人声），它应该紧接在“上一个非背景人声行”后面？
+				// 或者，如果上一行是背景人声，我们希望当前行忽略它？
+				
+				// 检查上一行是否为背景人声
+				if (lyrics[i-1].isBG) {
+					// 找到上一个非背景人声行
+					let prevNonBGIndex = i - 1;
+					while (prevNonBGIndex >= 0 && lyrics[prevNonBGIndex].isBG) {
+						prevNonBGIndex--;
+					}
+					
+					if (prevNonBGIndex >= 0) {
+						const prevNonBGHeight = heightOfItems.current[prevNonBGIndex] * transforms[prevNonBGIndex].scale;
+						transforms[i].top = transforms[prevNonBGIndex].top + prevNonBGHeight + space;
+					} else {
+						// 只有背景人声在前面？不太可能，但防守一下
+						transforms[i].top = transforms[i-1].top + space; 
+					}
+				} else {
+					// 上一行是正常行
+					transforms[i].top = transforms[i - 1].top + previousScaledHeight + space;
+				}
+			}
+
+			transforms[i].scale = scaleByOffset(effectiveOffset);
+			transforms[i].blur = blurByOffset(effectiveOffset);
+			transforms[i].opacity = opacityByOffset(effectiveOffset);
+			
+			transforms[i].delay = delayByOffset(i - visualCurrent);
+			setRotateTransform(transforms[i], transforms[visualCurrent].top - transforms[i].top, heightOfItems.current[i] * transforms[i].scale);
 		}
 		// contributors line
-		transforms[lyrics.length].scale = scaleByOffset(lyrics.length - 1 - current);
-		transforms[lyrics.length].blur = blurByOffset(lyrics.length - 1 - current);
-		transforms[lyrics.length].opacity = opacityByOffset(lyrics.length - 1 - current);
+		transforms[lyrics.length].scale = scaleByOffset(lyrics.length - 1 - visualCurrent);
+		transforms[lyrics.length].blur = blurByOffset(lyrics.length - 1 - visualCurrent);
+		transforms[lyrics.length].opacity = opacityByOffset(lyrics.length - 1 - visualCurrent);
 		if (lyrics.length > 0) {
 			const previousScaledHeight = heightOfItems.current[lyrics.length - 1] * transforms[lyrics.length - 1].scale;
 			transforms[lyrics.length].top = transforms[lyrics.length - 1].top + previousScaledHeight + Math.min(space * 1.5, 90);
@@ -384,10 +485,10 @@ export function Lyrics(props) {
 			transforms[lyrics.length].scale = scaleByOffset(0);
 			transforms[lyrics.length].opacity = opacityByOffset(0);
 		}
-		transforms[lyrics.length].delay = delayByOffset(lyrics.length - current);
-		setRotateTransform(transforms[lyrics.length], transforms[current].top - transforms[lyrics.length].top, heightOfItems.current[lyrics.length] * transforms[lyrics.length].scale);
+		transforms[lyrics.length].delay = delayByOffset(lyrics.length - visualCurrent);
+		setRotateTransform(transforms[lyrics.length], transforms[visualCurrent].top - transforms[lyrics.length].top, heightOfItems.current[lyrics.length] * transforms[lyrics.length].scale);
 		// set the height of interlude line back to normal
-		heightOfItems.current[current] = currentLineHeight;
+		heightOfItems.current[visualCurrent] = currentLineHeight;
 		// reset delay to 0 if necessary
 		// for no transition when resizing, etc.
 		if (!shouldTransit.current && !scrollingMode) {
@@ -1048,7 +1149,7 @@ function Line(props) {
 
 	return (
 		<div
-			className={`rnp-lyrics-line ${offset < 0 ? 'passed' : ''} ${props.line.isInterlude ? 'rnp-interlude' : ''} ${props.line.isDuet ? 'rnp-lyrics-line-duet' : ''} ${props.line.isBG ? 'rnp-lyrics-line-bg' : ''}`}
+			className={`rnp-lyrics-line ${offset < 0 ? 'passed' : ''} ${props.line.isInterlude ? 'rnp-interlude' : ''} ${props.line.isDuet ? 'rnp-lyrics-line-duet' : ''} ${props.line.isBG ? 'rnp-lyrics-line-bg' : ''} ${(props.line.highlightForce || props.transforms?.highlightForce) ? 'highlight-force' : ''}`}
 			offset={offset}
 			onClick={() => props.jumpToTime(props.line.time + 50)}
 			onContextMenu={(e) => {

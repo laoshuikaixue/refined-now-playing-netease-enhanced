@@ -355,7 +355,8 @@ export function Lyrics(props) {
 			transforms[i].blur = blurByOffset(i - current);
 			transforms[i].opacity = opacityByOffset(i - current);
 			let scaledHeight = heightOfItems.current[i] * transforms[i].scale;
-			transforms[i].top = transforms[i + 1].top - scaledHeight - space;
+			const currentSpace = lyrics[i].isBG ? 0 : space;
+			transforms[i].top = transforms[i + 1].top - scaledHeight - currentSpace;
 			transforms[i].delay = delayByOffset(i - current);
 			setRotateTransform(transforms[i], transforms[current].top - transforms[i].top, heightOfItems.current[i] * transforms[i].scale);
 		}
@@ -365,7 +366,8 @@ export function Lyrics(props) {
 			transforms[i].blur = blurByOffset(i - current);
 			transforms[i].opacity = opacityByOffset(i - current);
 			const previousScaledHeight = heightOfItems.current[i - 1] * transforms[i - 1].scale;
-			transforms[i].top = transforms[i - 1].top + previousScaledHeight + space;
+			const currentSpace = lyrics[i].isBG ? 0 : space;
+			transforms[i].top = transforms[i - 1].top + previousScaledHeight + currentSpace;
 			transforms[i].delay = delayByOffset(i - current);
 			setRotateTransform(transforms[i], transforms[current].top - transforms[i].top, heightOfItems.current[i] * transforms[i].scale);
 		}

@@ -324,6 +324,15 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 	}
 }
 
+.rnp-lyrics-line.rnp-lyrics-line-duet {
+	text-align: right;
+	transform-origin: right center;
+	right: 30px;
+	left: auto;
+	.rnp-lyrics-line-original, .rnp-lyrics-line-karaoke {
+		justify-content: flex-end;
+	}
+}
 
 .rnp-lyrics:not(.pure-music) .rnp-lyrics-line {
 	&::before {

@@ -2,7 +2,8 @@
 // Also provide a global variable `currentLyrics` for other scripts to use
 
 import { parseLyric } from './liblyric/index.ts'
-import { cyrb53 } from './utils.js'
+import { cyrb53, getSetting } from './utils.js'
+import { fetchAMLL } from './amll-provider.js'
 
 const preProcessLyrics = (lyrics) => {
 	if (!lyrics) return null;
@@ -87,7 +88,18 @@ window.onProcessLyrics = (_rawLyrics, songID) => {
 		currentRawLRC = (rawLyrics?.lrc?.lyric ?? '') ;
 		const preprocessedLyrics = preProcessLyrics(rawLyrics);
 		setTimeout(async () => {
-			const processedLyrics = await processLyrics(preprocessedLyrics);
+			let processedLyricsToUse = preprocessedLyrics;
+			const enableAMLL = getSetting('enable-amll', false);
+			if (enableAMLL) {
+				const playingId = betterncm.ncm.getPlaying().id;
+				const amll = await fetchAMLL(playingId);
+				if (amll && amll.length > 0) {
+					processedLyricsToUse = amll;
+					console.log('Using AMLL Lyrics');
+				}
+			}
+
+			const processedLyrics = await processLyrics(processedLyricsToUse);
 			const lyrics = {
 				lyrics: processedLyrics,
 				contributors: {}

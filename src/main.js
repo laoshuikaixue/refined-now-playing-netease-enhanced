@@ -484,6 +484,7 @@ const addSettingsMenu = async (isFM = false) => {
 		});
 
 		// 歌词
+		const enableAMLL = getOptionDom('#enable-amll');
 		const originalLyricBold = getOptionDom('#original-lyric-bold');
 		const lyricFontSize = getOptionDom('#lyric-font-size');
 		const lyricRomajiSizeEm = getOptionDom('#lyric-romaji-size-em');
@@ -501,6 +502,7 @@ const addSettingsMenu = async (isFM = false) => {
 		const lyricContributorsDisplay = getOptionDom('#lyric-contributors-display');
 		
 
+		bindCheckboxToClass(enableAMLL, 'enable-amll', true);
 		bindCheckboxToClass(originalLyricBold, 'original-lyric-bold', true);
 
 		bindSliderToFunction(lyricFontSize, (x) => {

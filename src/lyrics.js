@@ -1046,7 +1046,7 @@ function Line(props) {
 
 	return (
 		<div
-			className={`rnp-lyrics-line ${offset < 0 ? 'passed' : ''} ${props.line.isInterlude ? 'rnp-interlude' : ''} ${props.line.isDuet ? 'rnp-lyrics-line-duet' : ''}`}
+			className={`rnp-lyrics-line ${offset < 0 ? 'passed' : ''} ${props.line.isInterlude ? 'rnp-interlude' : ''} ${props.line.isDuet ? 'rnp-lyrics-line-duet' : ''} ${props.line.isBG ? 'rnp-lyrics-line-bg' : ''}`}
 			offset={offset}
 			onClick={() => props.jumpToTime(props.line.time + 50)}
 			onContextMenu={(e) => {

@@ -30,32 +30,27 @@ export const fetchAMLL = async (id) => {
 const mergeLyrics = (lines) => {
     // 假设：主歌词没有特殊 role，翻译有 translation，罗马音有 roman
     // 策略：找到时间轴重叠的行，将特殊 role 的行内容合并到主行
-    const mainLines = lines.filter(l => !l.role);
+    
+    // 主内容行包括：无 role 的行（主歌词）和 role 为 background 的行（背景人声）
+    // 背景人声不再合并到主歌词，而是作为独立行存在
+    const contentLines = lines.filter(l => !l.role || l.role === 'background' || l.role === 'x-background');
+    
     const transLines = lines.filter(l => l.role === 'translation' || l.role === 'x-translation');
     const romanLines = lines.filter(l => l.role === 'roman' || l.role === 'x-roman');
-    // 还有背景人声等，暂时作为主歌词处理或者忽略，如果它们没有 role，就会被当做主歌词，导致多行重叠
-    // 如果 AMLL 的背景人声有 role="background"，我们需要处理
-    const bgLines = lines.filter(l => l.role === 'background' || l.role === 'x-background');
 
-    // 如果没有明确的 role，可能是通过 xml:lang 区分的，但 cleanTTMLTranslations 已经过滤了语言
-    // 如果 cleanTTMLTranslations 保留了翻译（因为它是目标语言），那么翻译行现在应该还在 lines 里
-    // 但是它是一个单独的 <p>。
-    
     // 如果所有行都没有 role，我们尝试按时间匹配
-    if (mainLines.length === lines.length) {
-        // 所有行都没有 role，可能是交替行或者真的是多行歌词
-        // 这种情况下很难区分，直接返回原样
+    if (contentLines.length === lines.length) {
+        // 所有行都是内容行，直接返回
         return lines;
     }
 
-    return mainLines.map(line => {
+    return contentLines.map(line => {
         // 寻找匹配的翻译
+        // 注意：如果是背景人声行，可能不应该匹配主歌词的翻译，除非时间完全吻合且意图如此
+        // 暂时假设翻译主要是给主歌词的，但如果有重叠也匹配给背景
         const trans = transLines.find(t => isTimeOverlap(line, t));
         if (trans) {
             line.translatedLyric = trans.text;
-        } else if (!line.translatedLyric && transLines.length > 0) {
-            // 如果没有匹配的时间重叠，但有翻译行，尝试放宽条件？
-            // 或者保留 parseTTML 解析出的 spanTranslatedLyric
         }
         
         // 寻找匹配的罗马音
@@ -64,20 +59,13 @@ const mergeLyrics = (lines) => {
             line.romanLyric = roman.text;
         }
 
-        // 背景人声合并到主歌词，用括号包裹
-        const bg = bgLines.find(b => isTimeOverlap(line, b));
-        if (bg) {
-            line.text += ` (${bg.text})`;
-            // 如果背景人声有逐字，也合并? 比较复杂，暂时只合并文本
-        }
-
         return line;
     });
 };
 
 const isTimeOverlap = (l1, l2) => {
-    // 允许 100ms 的误差
-    return Math.abs(l1.startTime - l2.startTime) < 100;
+    // 允许 300ms 的误差 (参考 SPlayer)
+    return Math.abs(l1.startTime - l2.startTime) < 300;
 }
 
 const convertToRnpFormat = (lines) => {
@@ -88,14 +76,14 @@ const convertToRnpFormat = (lines) => {
             duration: w.endTime - w.startTime,
             flag: 0,
             word: w.word,
-            isCJK: false, 
+            isCJK: false, // 可以后续优化检测逻辑
             endsWithSpace: w.word.endsWith(' '),
             trailing: false 
         }));
 
         // 处理对唱 (isDuet)
-        // 在 RNP 格式中，flag = 1 可能代表第二歌手/对唱 (需要确认 RNP 格式定义)
         // 假设 flag 位掩码：1 = Duet/Right Aligned
+        // 虽然 RNP 目前主要靠 isDuet 属性，但保留 flag 兼容性
         const flag = line.isDuet ? 1 : 0; 
 
         return {
@@ -104,13 +92,13 @@ const convertToRnpFormat = (lines) => {
             originalLyric: line.text, 
             translatedLyric: line.translatedLyric || "",
             romanLyric: line.romanLyric || "",
+            bgLyric: line.bgLyric || "",
             rawLyric: "", 
             dynamicLyricTime: line.startTime,
             dynamicLyric: dynamicLyric,
-            // 传递对唱标记
-            // 如果 liblyric processLyric 会覆盖 flag，我们需要确认
-            // 暂时先放在这里，如果 processLyric 不支持，可能需要修改 processLyric
-            isDuet: line.isDuet 
+            isDuet: line.isDuet,
+            // 添加背景行标记
+            isBG: line.role === 'background' || line.role === 'x-background'
         };
     });
 };
@@ -126,26 +114,19 @@ const parseTTML = (ttmlContent) => {
         // 递归查找 p 标签，因为可能嵌套在 div 中
         const ps = xmlDoc.getElementsByTagName("p");
         
-        // AMLL 规范中，Agent (歌手) 信息可能在 metadata 中定义，并在 p 或 span 中引用
-        // 或者直接通过 ttm:agent 属性
-        // 但最常见的是通过解析歌词内容或 role 来推断
-        // SPlayer 的 parseTTML 实现似乎会返回 isDuet 字段
-        
-        // 简单的对唱检测逻辑：
-        // 1. 检查 ttm:agent 属性
-        // 2. 检查是否有括号包裹的歌手名 (SPlayer 的 lyricStripper 有处理，但那是针对 LRC)
-        // 3. AMLL 数据源通常会标记 role 或 agent
-        
+        // 解析 Agents
         const agents = {};
         const agentTags = xmlDoc.getElementsByTagName("ttm:agent");
         for (let i = 0; i < agentTags.length; i++) {
             const agent = agentTags[i];
             const id = agent.getAttribute("xml:id");
             if (id) {
-                agents[id] = agent.textContent; // 或者 agent.getAttribute("ttm:name")?
+                agents[id] = agent.textContent; 
             }
         }
-        console.log("AMLL Agents:", agents);
+
+        // 记录上一行的 Agent，用于辅助判断 Duet
+        let lastAgentId = null;
 
         for (let i = 0; i < ps.length; i++) {
             const p = ps[i];
@@ -163,51 +144,96 @@ const parseTTML = (ttmlContent) => {
             const agentId = p.getAttribute("ttm:agent");
             let isDuet = false;
             
-            // 如果有 agentId，且不是第一个定义的 agent，或者是特定的 "v2" 等，可能就是对唱
-            // 简单策略：如果 agentId 存在且不同于前一行（或者是特定的 ID），标记为 Duet
-            // 更好的策略：AMLL 规范中，通常 v1 是主唱，v2 是副唱/对唱
-            if (agentId === "v2" || agentId === "female" || (agentId && agentId !== "v1")) {
-                isDuet = true;
-            }
-
+            // 增强的对唱检测逻辑
             if (agentId) {
-                console.log(`Line ${i}: agentId=${agentId}, isDuet=${isDuet}, text=${p.textContent}`);
+                if (agentId === "v2" || agentId === "female" || agentId === "woman") {
+                    isDuet = true;
+                } else if (lastAgentId && agentId !== lastAgentId && agentId !== "v1") {
+                    // 如果 Agent 切换了，且不是切回主唱(v1)，则可能是对唱
+                     // 但这也可能是多人合唱，SPlayer 主要是靠 v2/female 判断
+                     // 这里保持保守，主要依赖明确的 ID 或 SPlayer 的逻辑
+                }
+                lastAgentId = agentId;
             }
 
-            const spans = p.getElementsByTagName("span");
+            // 遍历子节点以正确处理文本和特殊的 span
+            const childNodes = p.childNodes;
             
             let words = [];
             let textContent = "";
             let spanTranslatedLyric = "";
             let spanRomanLyric = "";
 
-            if (spans.length > 0) {
-                 for (let j = 0; j < spans.length; j++) {
-                    const span = spans[j];
-                    const spanBegin = parseTime(span.getAttribute("begin"));
-                    const spanEnd = parseTime(span.getAttribute("end"));
-                    const text = span.textContent || "";
+            // 临时存储背景人声行，稍后加入 lines
+            const bgLinesInThisP = [];
+
+            if (childNodes.length > 0) {
+                 for (let j = 0; j < childNodes.length; j++) {
+                    const node = childNodes[j];
                     
-                    // 如果 span 有 role，覆盖 p 的 role (虽然不常见)
-                    const spanRole = span.getAttribute("ttm:role") || span.getAttribute("role");
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        // 文本节点直接加入主歌词
+                        const text = node.textContent; // 保留空格
+                        // 如果包含非空白字符，或者不包含换行符（纯空格），则保留
+                        if (text.trim() || (!text.includes('\n') && text.length > 0)) {
+                            textContent += text;
+                            // 文本节点没有具体时间戳，如果需要逐字可能需要估算，或者直接忽略作为逐字
+                            // 这里暂时不生成 words 条目，除非之后发现需要
+                        }
+                    } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName.toLowerCase() === 'span') {
+                        const span = node;
+                        const spanBegin = parseTime(span.getAttribute("begin"));
+                        const spanEnd = parseTime(span.getAttribute("end"));
+                        let text = span.textContent || "";
+                        
+                        // 获取 Span Role
+                        const spanRole = span.getAttribute("ttm:role") || span.getAttribute("role");
 
-                    if (spanRole === 'x-translation' || spanRole === 'translation') {
-                        spanTranslatedLyric += text;
-                        continue;
-                    }
-                    if (spanRole === 'x-roman' || spanRole === 'roman') {
-                        spanRomanLyric += text;
-                        continue;
-                    }
+                        // 提取翻译、罗马音、背景人声
+                        if (spanRole === 'x-translation' || spanRole === 'translation') {
+                            spanTranslatedLyric += text;
+                            continue;
+                        }
+                        if (spanRole === 'x-roman' || spanRole === 'roman') {
+                            spanRomanLyric += text;
+                            continue;
+                        }
+                        if (spanRole === 'x-background' || spanRole === 'background') {
+                            // 背景人声作为独立行处理
+                            // 去除括号
+                            let cleanText = text.trim();
+                            if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
+                                cleanText = cleanText.slice(1, -1).trim();
+                            } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
+                                cleanText = cleanText.slice(1, -1).trim();
+                            }
+                            
+                            if (cleanText) {
+                                bgLinesInThisP.push({
+                                    startTime: spanBegin !== null ? spanBegin : startTime,
+                                    endTime: spanEnd !== null ? spanEnd : endTime,
+                                    words: [], // 暂不处理背景人声的逐字
+                                    text: cleanText,
+                                    role: 'background',
+                                    isDuet: isDuet,
+                                    translatedLyric: "", 
+                                    romanLyric: "",
+                                    bgLyric: "", // 自身就是背景，不需要 bgLyric
+                                    isBG: true
+                                });
+                            }
+                            continue;
+                        }
 
-                    if (spanBegin !== null && spanEnd !== null) {
-                         words.push({
-                            startTime: spanBegin,
-                            endTime: spanEnd,
-                            word: text
-                        });
+                        if (spanBegin !== null && spanEnd !== null) {
+                             words.push({
+                                startTime: spanBegin,
+                                endTime: spanEnd,
+                                word: text
+                            });
+                        }
+                        textContent += text;
                     }
-                    textContent += text;
                 }
             } else {
                  textContent = p.textContent || "";
@@ -218,7 +244,7 @@ const parseTTML = (ttmlContent) => {
                  });
             }
             
-            if (words.length === 0 && textContent) {
+            if (words.length === 0 && textContent && !spanTranslatedLyric && !spanRomanLyric) {
                  words.push({
                      startTime: startTime,
                      endTime: endTime,
@@ -226,16 +252,40 @@ const parseTTML = (ttmlContent) => {
                  });
             }
 
-            lines.push({
-                startTime,
-                endTime,
-                words,
-                text: textContent,
-                role: role,
-                isDuet: isDuet, // 添加 isDuet 属性
-                translatedLyric: spanTranslatedLyric,
-                romanLyric: spanRomanLyric
-            });
+            // 如果主歌词有内容，或者它是纯背景行但被识别为主行（role=background）
+            // 如果 role 是 background，也标记为 isBG
+            const isLineBG = role === 'background' || role === 'x-background';
+            
+            // 如果是纯背景行，且内容在括号内，去除括号
+            if (isLineBG) {
+                let cleanText = textContent.trim();
+                if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
+                    cleanText = cleanText.slice(1, -1).trim();
+                    textContent = cleanText;
+                } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
+                    cleanText = cleanText.slice(1, -1).trim();
+                    textContent = cleanText;
+                }
+            }
+
+            // 只有当有内容时才添加
+            if (textContent.trim() || spanTranslatedLyric || spanRomanLyric) {
+                lines.push({
+                    startTime,
+                    endTime,
+                    words,
+                    text: textContent,
+                    role: role,
+                    isDuet: isDuet, 
+                    translatedLyric: spanTranslatedLyric,
+                    romanLyric: spanRomanLyric,
+                    bgLyric: "", // 这里不再由 parseTTML 填充 bgLyric，而是由 mergeLyrics 处理（或者保持独立）
+                    isBG: isLineBG
+                });
+            }
+
+            // 添加提取出的背景人声行
+            lines.push(...bgLinesInThisP);
         }
         
         return lines.sort((a, b) => a.startTime - b.startTime);
@@ -314,5 +364,7 @@ const cleanTTMLTranslations = (ttmlContent) => {
     const major = lang_filter(context_lang);
     let cleaned_ttml = ttml_cleaner(ttmlContent, major);
 
-    return cleaned_ttml.replace(/\n\s*/g, "");
+    // 移除不必要的换行符，但要小心保留空格
+    // return cleaned_ttml.replace(/\n\s*/g, ""); // 此行代码可能导致单词粘连，移除
+    return cleaned_ttml;
 };

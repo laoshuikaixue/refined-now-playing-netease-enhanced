@@ -1,24 +1,16 @@
-# Refined Now Playing
+# Refined Now Playing Enhanced
 
 一个美化网易云音乐播放界面的 [BetterNCM](https://github.com/MicroCBer/BetterNCM) 插件
 
-# Status
+## 项目说明
 
-Since I no longer use CloudMusic, the maintenance of this project has been suspended indefinitely.
+本项目是基于 [solstice23/refined-now-playing-netease](https://github.com/solstice23/refined-now-playing-netease) 修改的增强版本。
 
-# 安装
+## 安装
 
-0. 安装 [BetterNCM](https://github.com/MicroCBer/BetterNCM) 插件
-1. 在插件商店中安装
+1. 安装 [BetterNCM](https://github.com/MicroCBer/BetterNCM) 插件
+2. 在插件商店中安装
 
-# 效果
+---
 
-https://user-images.githubusercontent.com/23134847/216518149-9d85c6a6-4ad5-4c2c-9843-a2f65f610fd0.mp4
-
-![screenshot1](screenshot1.jpg)
-
-![screenshot2](screenshot3.jpg)
-
-![screenshot3](screenshot2.jpg)
-
-![screenshot4](screenshot4.jpg)
+Modified by LaoShui @ 2026, based on the original work by [solstice23](https://github.com/solstice23/refined-now-playing-netease).

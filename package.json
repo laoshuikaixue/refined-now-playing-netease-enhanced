@@ -21,9 +21,9 @@
     "webpack-cli": "^5.0.1",
     "webpack-dev-server": "^4.11.1"
   },
-  "version": "1.0.0",
-  "description": "RefinedNowPlaying",
-  "name": "refined-now-playing",
+  "version": "0.1.0",
+  "description": "RefinedNowPlaying Enhanced",
+  "name": "refined-now-playing-netease-enhanced",
   "scripts": {
     "build": "webpack --mode=production --node-env=production",
     "build:dev": "webpack --mode=development",

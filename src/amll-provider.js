@@ -198,21 +198,85 @@ const parseTTML = (ttmlContent) => {
                             spanRomanLyric += text;
                             continue;
                         }
-                        if (spanRole === 'x-background' || spanRole === 'background') {
+                        if (spanRole === 'x-background' || spanRole === 'background' || spanRole === 'x-bg') {
                             // 背景人声作为独立行处理
                             // 去除括号
                             let cleanText = text.trim();
-                            if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
-                                cleanText = cleanText.slice(1, -1).trim();
-                            } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
-                                cleanText = cleanText.slice(1, -1).trim();
+                            
+                            // 检查是否有逐字信息（子 span）
+                            // span 元素本身可能有子元素，但目前的循环是在遍历 childNodes (p 的子节点)
+                            // span 是 p 的直接子节点。我们需要检查 span 内部是否有更深层的结构
+                            let bgWords = [];
+                            if (span.childNodes.length > 0) {
+                                for (let k = 0; k < span.childNodes.length; k++) {
+                                    const subNode = span.childNodes[k];
+                                    if (subNode.nodeType === Node.ELEMENT_NODE && subNode.tagName.toLowerCase() === 'span') {
+                                        const subSpan = subNode;
+                                        const subBegin = parseTime(subSpan.getAttribute("begin"));
+                                        const subEnd = parseTime(subSpan.getAttribute("end"));
+                                        const subText = subSpan.textContent || "";
+                                        if (subBegin !== null && subEnd !== null) {
+                                            bgWords.push({
+                                                startTime: subBegin,
+                                                endTime: subEnd,
+                                                word: subText
+                                            });
+                                        }
+                                    } else if (subNode.nodeType === Node.TEXT_NODE) {
+                                        // 如果背景人声里混有纯文本，也应该作为 word? 
+                                        // 通常逐字歌词不会这样，这里简化处理，如果只有文本，就取整个 span 的时间
+                                    }
+                                }
+                            }
+
+                            // 如果没有检测到子 span 的逐字，但 span 自身有时间戳，则将整体作为一个 word
+                            if (bgWords.length === 0 && cleanText) {
+                                if (spanBegin !== null && spanEnd !== null) {
+                                    bgWords.push({
+                                        startTime: spanBegin,
+                                        endTime: spanEnd,
+                                        word: cleanText
+                                    });
+                                }
+                            }
+
+                            // 去除 bgWords 首尾的括号
+                            if (bgWords.length > 0) {
+                                let firstWord = bgWords[0];
+                                let lastWord = bgWords[bgWords.length - 1];
+                                
+                                if (firstWord.word.trim().startsWith('(')) {
+                                    firstWord.word = firstWord.word.trim().substring(1);
+                                } else if (firstWord.word.trim().startsWith('（')) {
+                                    firstWord.word = firstWord.word.trim().substring(1);
+                                }
+
+                                if (lastWord.word.trim().endsWith(')')) {
+                                    lastWord.word = lastWord.word.trim().slice(0, -1);
+                                } else if (lastWord.word.trim().endsWith('）')) {
+                                    lastWord.word = lastWord.word.trim().slice(0, -1);
+                                }
+                                
+                                // 重新清理一下 cleanText 用于显示（非逐字模式兜底）
+                                if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
+                                    cleanText = cleanText.slice(1, -1).trim();
+                                } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
+                                    cleanText = cleanText.slice(1, -1).trim();
+                                }
+                            } else {
+                                // 没有 words，只处理 cleanText
+                                if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
+                                    cleanText = cleanText.slice(1, -1).trim();
+                                } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
+                                    cleanText = cleanText.slice(1, -1).trim();
+                                }
                             }
                             
-                            if (cleanText) {
+                            if (cleanText || bgWords.length > 0) {
                                 bgLinesInThisP.push({
                                     startTime: spanBegin !== null ? spanBegin : startTime,
                                     endTime: spanEnd !== null ? spanEnd : endTime,
-                                    words: [], // 暂不处理背景人声的逐字
+                                    words: bgWords, 
                                     text: cleanText,
                                     role: 'background',
                                     isDuet: isDuet,

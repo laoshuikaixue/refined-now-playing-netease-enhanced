@@ -362,6 +362,7 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 	&[offset='0'], &[offset='1'] {
 		pointer-events: auto;
 		z-index: 1;
+		filter: none !important;
 
 		> div.rnp-lyrics-line-original, > div.rnp-lyrics-line-karaoke {
 			opacity: 0.8 !important; // 强制显示

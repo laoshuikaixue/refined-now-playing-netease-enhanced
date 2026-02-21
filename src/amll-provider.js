@@ -163,6 +163,7 @@ const parseTTML = (ttmlContent) => {
             let textContent = "";
             let spanTranslatedLyric = "";
             let spanRomanLyric = "";
+            let pendingText = "";
 
             // 临时存储背景人声行，稍后加入 lines
             const bgLinesInThisP = [];
@@ -177,8 +178,13 @@ const parseTTML = (ttmlContent) => {
                         // 如果包含非空白字符，或者不包含换行符（纯空格），则保留
                         if (text.trim() || (!text.includes('\n') && text.length > 0)) {
                             textContent += text;
-                            // 文本节点没有具体时间戳，如果需要逐字可能需要估算，或者直接忽略作为逐字
-                            // 这里暂时不生成 words 条目，除非之后发现需要
+                            
+                            // 尝试将文本（如空格、标点）合并到 words 中
+                            if (words.length > 0) {
+                                words[words.length - 1].word += text;
+                            } else {
+                                pendingText += text;
+                            }
                         }
                     } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName.toLowerCase() === 'span') {
                         const span = node;
@@ -290,10 +296,15 @@ const parseTTML = (ttmlContent) => {
                         }
 
                         if (spanBegin !== null && spanEnd !== null) {
+                             let wordText = text;
+                             if (pendingText) {
+                                 wordText = pendingText + text;
+                                 pendingText = "";
+                             }
                              words.push({
                                 startTime: spanBegin,
                                 endTime: spanEnd,
-                                word: text
+                                word: wordText
                             });
                         }
                         textContent += text;

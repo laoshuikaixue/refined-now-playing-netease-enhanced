@@ -10,7 +10,8 @@
     box-sizing: border-box;
     margin-left: -25px;
 }
-.g-singlec[data-log*='"s_ctype":"voice"'] .lyric { // 在播客界面隐藏
+.g-singlec[data-log*='"s_ctype":"voice"'] .lyric { 
+    /* 在播客界面隐藏 */
 	display: none;
 }
 
@@ -94,9 +95,6 @@ body.original-lyric-bold {
 }
 .rnp-lyrics-line {
 	line-height: 1.2;
-	/*.rnp-lyrics-line-karaoke, .rnp-lyrics-line-original {
-		font-weight: 600;
-	}*/
     max-width: calc(100% - 60px);
 	$idle-opacity: 0.4;
 	&[offset='0'] > div, &.highlight-force > div{ 
@@ -118,7 +116,6 @@ body.original-lyric-bold {
 	}
 	> div {
 		transition: opacity 0.5s ease;
-		// transition-delay: 0.2s;
 		&:not(:last-child) {
 			margin-bottom: 0.3em;
 		}
@@ -144,7 +141,7 @@ body.original-lyric-bold {
 		}
 	}
 
-	// Interlude Dots	
+	// 间奏点	
 	&[offset='0'] > div, &.highlight-force > div{ 
 		.rnp-interlude-dot {
 			opacity: 0.9;
@@ -285,10 +282,8 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 		}
 	}
 	&.passed{
-		&/*:not([offset='-1'])*/ {
-			.rnp-karaoke-word-filler {
-				-webkit-mask-image: none;
-			}
+		.rnp-karaoke-word-filler {
+			-webkit-mask-image: none;
 		}
 	}
 	&[offset='0'] > div, &.highlight-force > div{ 
@@ -334,7 +329,7 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 	// 默认状态（非激活）：隐藏且不占空间
 	// 使用 height: 0 让 JS 计算布局时忽略此行高度，利用行间距(space)来容纳背景人声
 	height: 0 !important;
-	width: 100%; // 确保宽度正常
+	width: 100%;
 	margin: 0 !important;
 	padding: 0 !important;
 	overflow: visible; // 必须可见，否则 height: 0 会隐藏内容
@@ -342,7 +337,6 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 	z-index: 0; // 确保在主歌词下方或层级正确
 	
 	// 父元素由 JS 控制 transform/opacity，所以视觉效果必须写在子元素上
-	// 移除父元素的 transition，避免与 JS 冲突
 
 	> div.rnp-lyrics-line-original, > div.rnp-lyrics-line-karaoke {
 		font-size: max(calc(1em * 0.55), 12px); // 稍微调小一点
@@ -414,7 +408,6 @@ body.rnp-karaoke-animation-slide .rnp-lyrics-line {
 		bottom: -15px;
 		transform: scale(1.05);
 		border-radius: 10px;
-		//background-color: var(--rnp-accent-color-contrast);
 		background-color: var(--rnp-accent-color-shade-2);
 		opacity: 0;
 		z-index: 0;

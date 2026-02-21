@@ -28,32 +28,24 @@ export const fetchAMLL = async (id) => {
 };
 
 const mergeLyrics = (lines) => {
-    // 假设：主歌词没有特殊 role，翻译有 translation，罗马音有 roman
-    // 策略：找到时间轴重叠的行，将特殊 role 的行内容合并到主行
-    
-    // 主内容行包括：无 role 的行（主歌词）和 role 为 background 的行（背景人声）
-    // 背景人声不再合并到主歌词，而是作为独立行存在
+    // 过滤出主歌词行（无 role 或 role 为 background）
     const contentLines = lines.filter(l => !l.role || l.role === 'background' || l.role === 'x-background');
-    
     const transLines = lines.filter(l => l.role === 'translation' || l.role === 'x-translation');
     const romanLines = lines.filter(l => l.role === 'roman' || l.role === 'x-roman');
 
-    // 如果所有行都没有 role，我们尝试按时间匹配
+    // 如果所有行都是主内容行，直接返回
     if (contentLines.length === lines.length) {
-        // 所有行都是内容行，直接返回
         return lines;
     }
 
     return contentLines.map(line => {
-        // 寻找匹配的翻译
-        // 注意：如果是背景人声行，可能不应该匹配主歌词的翻译，除非时间完全吻合且意图如此
-        // 暂时假设翻译主要是给主歌词的，但如果有重叠也匹配给背景
+        // 寻找时间重叠的翻译行
         const trans = transLines.find(t => isTimeOverlap(line, t));
         if (trans) {
             line.translatedLyric = trans.text;
         }
         
-        // 寻找匹配的罗马音
+        // 寻找时间重叠的罗马音行
         const roman = romanLines.find(r => isTimeOverlap(line, r));
         if (roman) {
             line.romanLyric = roman.text;
@@ -64,7 +56,7 @@ const mergeLyrics = (lines) => {
 };
 
 const isTimeOverlap = (l1, l2) => {
-    // 允许 300ms 的误差 (参考 SPlayer)
+    // 允许 300ms 的误差
     return Math.abs(l1.startTime - l2.startTime) < 300;
 }
 
@@ -76,15 +68,10 @@ const convertToRnpFormat = (lines) => {
             duration: w.endTime - w.startTime,
             flag: 0,
             word: w.word,
-            isCJK: false, // 可以后续优化检测逻辑
+            isCJK: false,
             endsWithSpace: w.word.endsWith(' '),
             trailing: false 
         }));
-
-        // 处理对唱 (isDuet)
-        // 假设 flag 位掩码：1 = Duet/Right Aligned
-        // 虽然 RNP 目前主要靠 isDuet 属性，但保留 flag 兼容性
-        const flag = line.isDuet ? 1 : 0; 
 
         return {
             time: line.startTime,
@@ -97,7 +84,6 @@ const convertToRnpFormat = (lines) => {
             dynamicLyricTime: line.startTime,
             dynamicLyric: dynamicLyric,
             isDuet: line.isDuet,
-            // 添加背景行标记
             isBG: line.role === 'background' || line.role === 'x-background'
         };
     });
@@ -111,21 +97,8 @@ const parseTTML = (ttmlContent) => {
         if (!body) return [];
 
         const lines = [];
-        // 递归查找 p 标签，因为可能嵌套在 div 中
         const ps = xmlDoc.getElementsByTagName("p");
         
-        // 解析 Agents
-        const agents = {};
-        const agentTags = xmlDoc.getElementsByTagName("ttm:agent");
-        for (let i = 0; i < agentTags.length; i++) {
-            const agent = agentTags[i];
-            const id = agent.getAttribute("xml:id");
-            if (id) {
-                agents[id] = agent.textContent; 
-            }
-        }
-
-        // 记录上一行的 Agent，用于辅助判断 Duet
         let lastAgentId = null;
 
         for (let i = 0; i < ps.length; i++) {
@@ -133,39 +106,29 @@ const parseTTML = (ttmlContent) => {
             const startTime = parseTime(p.getAttribute("begin"));
             const endTime = parseTime(p.getAttribute("end"));
             
-            // 获取 Role
+            // 获取 Role，如果自身没有则检查父级 div
             let role = p.getAttribute("ttm:role") || p.getAttribute("role");
-            // 检查父级 div 的 role
             if (!role && p.parentElement && p.parentElement.tagName.toLowerCase() === 'div') {
                 role = p.parentElement.getAttribute("ttm:role") || p.parentElement.getAttribute("role");
             }
             
-            // 获取 Agent
+            // 对唱检测逻辑
             const agentId = p.getAttribute("ttm:agent");
             let isDuet = false;
-            
-            // 增强的对唱检测逻辑
             if (agentId) {
                 if (agentId === "v2" || agentId === "female" || agentId === "woman") {
                     isDuet = true;
-                } else if (lastAgentId && agentId !== lastAgentId && agentId !== "v1") {
-                    // 如果 Agent 切换了，且不是切回主唱(v1)，则可能是对唱
-                     // 但这也可能是多人合唱，SPlayer 主要是靠 v2/female 判断
-                     // 这里保持保守，主要依赖明确的 ID 或 SPlayer 的逻辑
                 }
                 lastAgentId = agentId;
             }
 
-            // 遍历子节点以正确处理文本和特殊的 span
             const childNodes = p.childNodes;
-            
             let words = [];
             let textContent = "";
             let spanTranslatedLyric = "";
             let spanRomanLyric = "";
             let pendingText = "";
 
-            // 临时存储背景人声行，稍后加入 lines
             const bgLinesInThisP = [];
 
             if (childNodes.length > 0) {
@@ -173,13 +136,10 @@ const parseTTML = (ttmlContent) => {
                     const node = childNodes[j];
                     
                     if (node.nodeType === Node.TEXT_NODE) {
-                        // 文本节点直接加入主歌词
-                        const text = node.textContent; // 保留空格
-                        // 如果包含非空白字符，或者不包含换行符（纯空格），则保留
+                        const text = node.textContent;
+                        // 保留非空文本或纯换行以外的字符
                         if (text.trim() || (!text.includes('\n') && text.length > 0)) {
                             textContent += text;
-                            
-                            // 尝试将文本（如空格、标点）合并到 words 中
                             if (words.length > 0) {
                                 words[words.length - 1].word += text;
                             } else {
@@ -192,10 +152,8 @@ const parseTTML = (ttmlContent) => {
                         const spanEnd = parseTime(span.getAttribute("end"));
                         let text = span.textContent || "";
                         
-                        // 获取 Span Role
                         const spanRole = span.getAttribute("ttm:role") || span.getAttribute("role");
 
-                        // 提取翻译、罗马音、背景人声
                         if (spanRole === 'x-translation' || spanRole === 'translation') {
                             spanTranslatedLyric += text;
                             continue;
@@ -204,23 +162,19 @@ const parseTTML = (ttmlContent) => {
                             spanRomanLyric += text;
                             continue;
                         }
+                        // 处理背景人声
                         if (spanRole === 'x-background' || spanRole === 'background' || spanRole === 'x-bg') {
-                            // 背景人声作为独立行处理
-                            // 去除括号
                             let cleanText = text.trim();
+                            let bgWords = [];
                             
                             // 检查是否有逐字信息（子 span）
-                            // span 元素本身可能有子元素，但目前的循环是在遍历 childNodes (p 的子节点)
-                            // span 是 p 的直接子节点。我们需要检查 span 内部是否有更深层的结构
-                            let bgWords = [];
                             if (span.childNodes.length > 0) {
                                 for (let k = 0; k < span.childNodes.length; k++) {
                                     const subNode = span.childNodes[k];
                                     if (subNode.nodeType === Node.ELEMENT_NODE && subNode.tagName.toLowerCase() === 'span') {
-                                        const subSpan = subNode;
-                                        const subBegin = parseTime(subSpan.getAttribute("begin"));
-                                        const subEnd = parseTime(subSpan.getAttribute("end"));
-                                        const subText = subSpan.textContent || "";
+                                        const subBegin = parseTime(subNode.getAttribute("begin"));
+                                        const subEnd = parseTime(subNode.getAttribute("end"));
+                                        const subText = subNode.textContent || "";
                                         if (subBegin !== null && subEnd !== null) {
                                             bgWords.push({
                                                 startTime: subBegin,
@@ -228,54 +182,24 @@ const parseTTML = (ttmlContent) => {
                                                 word: subText
                                             });
                                         }
-                                    } else if (subNode.nodeType === Node.TEXT_NODE) {
-                                        // 如果背景人声里混有纯文本，也应该作为 word? 
-                                        // 通常逐字歌词不会这样，这里简化处理，如果只有文本，就取整个 span 的时间
                                     }
                                 }
                             }
 
-                            // 如果没有检测到子 span 的逐字，但 span 自身有时间戳，则将整体作为一个 word
-                            if (bgWords.length === 0 && cleanText) {
-                                if (spanBegin !== null && spanEnd !== null) {
-                                    bgWords.push({
-                                        startTime: spanBegin,
-                                        endTime: spanEnd,
-                                        word: cleanText
-                                    });
-                                }
+                            // 如果没有子 span 但有时间戳，整体作为一个词
+                            if (bgWords.length === 0 && cleanText && spanBegin !== null && spanEnd !== null) {
+                                bgWords.push({
+                                    startTime: spanBegin,
+                                    endTime: spanEnd,
+                                    word: cleanText
+                                });
                             }
 
-                            // 去除 bgWords 首尾的括号
+                            // 去除首尾括号
+                            cleanText = removeParentheses(cleanText);
                             if (bgWords.length > 0) {
-                                let firstWord = bgWords[0];
-                                let lastWord = bgWords[bgWords.length - 1];
-                                
-                                if (firstWord.word.trim().startsWith('(')) {
-                                    firstWord.word = firstWord.word.trim().substring(1);
-                                } else if (firstWord.word.trim().startsWith('（')) {
-                                    firstWord.word = firstWord.word.trim().substring(1);
-                                }
-
-                                if (lastWord.word.trim().endsWith(')')) {
-                                    lastWord.word = lastWord.word.trim().slice(0, -1);
-                                } else if (lastWord.word.trim().endsWith('）')) {
-                                    lastWord.word = lastWord.word.trim().slice(0, -1);
-                                }
-                                
-                                // 重新清理一下 cleanText 用于显示（非逐字模式兜底）
-                                if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
-                                    cleanText = cleanText.slice(1, -1).trim();
-                                } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
-                                    cleanText = cleanText.slice(1, -1).trim();
-                                }
-                            } else {
-                                // 没有 words，只处理 cleanText
-                                if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
-                                    cleanText = cleanText.slice(1, -1).trim();
-                                } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
-                                    cleanText = cleanText.slice(1, -1).trim();
-                                }
+                                bgWords[0].word = removeLeadingParenthesis(bgWords[0].word);
+                                bgWords[bgWords.length - 1].word = removeTrailingParenthesis(bgWords[bgWords.length - 1].word);
                             }
                             
                             if (cleanText || bgWords.length > 0) {
@@ -288,7 +212,7 @@ const parseTTML = (ttmlContent) => {
                                     isDuet: isDuet,
                                     translatedLyric: "", 
                                     romanLyric: "",
-                                    bgLyric: "", // 自身就是背景，不需要 bgLyric
+                                    bgLyric: "",
                                     isBG: true
                                 });
                             }
@@ -327,23 +251,11 @@ const parseTTML = (ttmlContent) => {
                  });
             }
 
-            // 如果主歌词有内容，或者它是纯背景行但被识别为主行（role=background）
-            // 如果 role 是 background，也标记为 isBG
             const isLineBG = role === 'background' || role === 'x-background';
-            
-            // 如果是纯背景行，且内容在括号内，去除括号
             if (isLineBG) {
-                let cleanText = textContent.trim();
-                if (cleanText.startsWith('(') && cleanText.endsWith(')')) {
-                    cleanText = cleanText.slice(1, -1).trim();
-                    textContent = cleanText;
-                } else if (cleanText.startsWith('（') && cleanText.endsWith('）')) {
-                    cleanText = cleanText.slice(1, -1).trim();
-                    textContent = cleanText;
-                }
+                textContent = removeParentheses(textContent);
             }
 
-            // 只有当有内容时才添加
             if (textContent.trim() || spanTranslatedLyric || spanRomanLyric) {
                 lines.push({
                     startTime,
@@ -354,12 +266,11 @@ const parseTTML = (ttmlContent) => {
                     isDuet: isDuet, 
                     translatedLyric: spanTranslatedLyric,
                     romanLyric: spanRomanLyric,
-                    bgLyric: "", // 这里不再由 parseTTML 填充 bgLyric，而是由 mergeLyrics 处理（或者保持独立）
+                    bgLyric: "",
                     isBG: isLineBG
                 });
             }
 
-            // 添加提取出的背景人声行
             lines.push(...bgLinesInThisP);
         }
         
@@ -371,9 +282,33 @@ const parseTTML = (ttmlContent) => {
     }
 }
 
+const removeParentheses = (text) => {
+    let cleanText = text.trim();
+    if ((cleanText.startsWith('(') && cleanText.endsWith(')')) || 
+        (cleanText.startsWith('（') && cleanText.endsWith('）'))) {
+        return cleanText.slice(1, -1).trim();
+    }
+    return cleanText;
+}
+
+const removeLeadingParenthesis = (text) => {
+    let t = text.trim();
+    if (t.startsWith('(') || t.startsWith('（')) {
+        return t.substring(1);
+    }
+    return text;
+}
+
+const removeTrailingParenthesis = (text) => {
+    let t = text.trim();
+    if (t.endsWith(')') || t.endsWith('）')) {
+        return t.slice(0, -1);
+    }
+    return text;
+}
+
 const parseTime = (timeStr) => {
     if (!timeStr) return null;
-    // Format: HH:MM:SS.mmm or MM:SS.mmm
     const parts = timeStr.split(":");
     let seconds = 0;
     if (parts.length === 3) {
@@ -383,11 +318,11 @@ const parseTime = (timeStr) => {
     } else {
         seconds = parseFloat(timeStr);
     }
-    return Math.round(seconds * 1000); // ms
+    return Math.round(seconds * 1000);
 }
 
 const cleanTTMLTranslations = (ttmlContent) => {
-    // 移除 XML 声明，避免 DOMParser 解析错误
+    // 移除 XML 声明
     ttmlContent = ttmlContent.replace(/<\?xml.*?\?>/, '');
 
     const lang_counter = (ttml_text) => {
@@ -427,8 +362,7 @@ const cleanTTMLTranslations = (ttmlContent) => {
 
     const ttml_cleaner = (ttml_text, major_lang) => {
         if (major_lang === null) return ttml_text;
-        // 注意：这里我们保留了 translation 标签，但是只保留匹配语言的
-        // 如果不匹配语言，替换为空
+        // 仅保留匹配语言的 translation 和 span 标签
         const replacer = (match, lang) => (lang === major_lang ? match : "");
         const translationRegex = /<translation[^>]+xml:lang="([^"]+)"[^>]*>[\s\S]*?<\/translation>/g;
         const spanRegex = /<span[^>]+xml:lang="([^" ]+)"[^>]*>[\s\S]*?<\/span>/g;
@@ -437,9 +371,5 @@ const cleanTTMLTranslations = (ttmlContent) => {
 
     const context_lang = lang_counter(ttmlContent);
     const major = lang_filter(context_lang);
-    let cleaned_ttml = ttml_cleaner(ttmlContent, major);
-
-    // 移除不必要的换行符，但要小心保留空格
-    // return cleaned_ttml.replace(/\n\s*/g, ""); // 此行代码可能导致单词粘连，移除
-    return cleaned_ttml;
+    return ttml_cleaner(ttmlContent, major);
 };

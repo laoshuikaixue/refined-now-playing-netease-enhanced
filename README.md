@@ -6,10 +6,16 @@
 
 本项目是基于 [solstice23/refined-now-playing-netease](https://github.com/solstice23/refined-now-playing-netease) 修改的增强版本。
 
-## 安装
+### 参考项目
 
-1. 安装 [BetterNCM](https://github.com/MicroCBer/BetterNCM) 插件
-2. 在插件商店中安装
+本项目在开发过程中参考和使用了以下优秀的开源项目：
+
+- [Apple Music-like Lyrics](https://github.com/amll-dev/applemusic-like-lyrics)
+- [SPlayer](https://github.com/imsyy/SPlayer)
+
+## 许可证
+
+[GPL-3.0](LICENSE)
 
 ---
 

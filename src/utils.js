@@ -87,3 +87,8 @@ export const cyrb53 = (str, seed = 0) => {
 
 	return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 };
+
+export const getPlugin = () => {
+	const name = "RefinedNowPlaying Enhanced";
+	return Object.values(loadedPlugins).find(x => x.manifest.name === name) || loadedPlugins.RefinedNowPlaying || loadedPlugins["refined-now-playing-netease"];
+}

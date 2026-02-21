@@ -5,7 +5,7 @@ import './experimental.scss';
 import settingsMenuHTML from './settings-menu.html';
 import './settings-menu.scss';
 import { argb2Rgb, rgb2Argb } from './color-utils.js';
-import { waitForElement, waitForElementAsync, getSetting, setSetting, chunk, copyTextToClipboard } from './utils.js';
+import { waitForElement, waitForElementAsync, getSetting, setSetting, chunk, copyTextToClipboard, getPlugin } from './utils.js';
 import './refined-control-bar.js';
 import { Background } from './background.js';
 import { CoverShadow } from './cover-shadow.js';
@@ -616,7 +616,7 @@ const addSettingsMenu = async (isFM = false) => {
 
 		// 关于
 		const versionNumber = getOptionDom('#rnp-version-number');
-		versionNumber.innerHTML = loadedPlugins.RefinedNowPlaying.manifest.version;
+		versionNumber.innerHTML = getPlugin().manifest.version;
 		const openWhatsNew = getOptionDom('#open-whats-new');
 		openWhatsNew.addEventListener('click', () => {
 			whatsNew(true);

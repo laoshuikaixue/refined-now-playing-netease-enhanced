@@ -53,6 +53,7 @@ export const PURE_MUSIC_LYRIC_DATA = {
 	briefDesc: null,
 };
 
+const ALIGN_TOLERANCE_MS = 300;
 
 const simularityCache: Record<string, number> = {};
 function calcSimularity(a: string, b: string) {
@@ -82,6 +83,59 @@ function calcSimularity(a: string, b: string) {
 		}
 	}
 	return d[m][n];
+}
+
+/**
+ * 歌词内容对齐
+ * 使用双指针算法实现 O(N) 复杂度
+ * @param lyrics 歌词数据
+ * @param otherLyrics 其他歌词数据
+ * @param key 对齐类型
+ * @returns 对齐后的歌词数据
+ */
+function alignLyrics(
+	lyrics: LyricLine[],
+	otherLyrics: LyricPureLine[],
+	key: "translatedLyric" | "romanLyric"
+): LyricLine[] {
+	if (!lyrics.length || !otherLyrics.length) return lyrics;
+
+	let i = 0;
+	let j = 0;
+
+	while (i < lyrics.length && j < otherLyrics.length) {
+		const line = lyrics[i];
+		const other = otherLyrics[j];
+		const diff = line.time - other.time;
+
+		if (Math.abs(diff) <= ALIGN_TOLERANCE_MS) {
+			// 匹配成功
+			if (key === "translatedLyric" || key === "romanLyric") {
+				// 检查内容相似度，如果翻译内容和原文太相似，则忽略
+				const similarity = calcSimularity(line.originalLyric, other.lyric);
+				const maxLen = Math.max(line.originalLyric.length, other.lyric.length);
+				// 如果相似度非常高（编辑距离很小），且长度不为0，则认为是重复内容
+				// 例如：Hello -> Hello (dist=0), maxLen=5, ratio=0 < 0.2 -> ignore
+				// Hello -> Hella (dist=1), maxLen=5, ratio=0.2 -> keep
+				if (maxLen > 0 && similarity / maxLen < 0.2) {
+					// 忽略高度相似的翻译
+				} else {
+					(line as any)[key] = other.lyric;
+				}
+			} else {
+				(line as any)[key] = other.lyric;
+			}
+			i++;
+			j++;
+		} else if (diff < 0) {
+			// 当前歌词时间较早，移动当前指针
+			i++;
+		} else {
+			// 目标歌词时间较早，移动目标指针
+			j++;
+		}
+	}
+	return lyrics;
 }
 
 
@@ -117,19 +171,8 @@ export function parseLyric(
 			...(v.unsynced ? { unsynced: true } : {}),
 		}));
 
-		parsePureLyric(translated).forEach((line) => {
-			const target = result.find((v) => v.time === line.time);
-			if (target) {
-				target.translatedLyric = line.lyric;
-			}
-		});
-
-		parsePureLyric(roman).forEach((line) => {
-			const target = result.find((v) => v.time === line.time);
-			if (target) {
-				target.romanLyric = line.lyric;
-			}
-		});
+		alignLyrics(result, parsePureLyric(translated), "translatedLyric");
+		alignLyrics(result, parsePureLyric(roman), "romanLyric");
 
 		result.sort((a, b) => a.time - b.time);
 
@@ -252,6 +295,15 @@ export function parseLyric(
 				const target = processed[targetIndex];
 
 				//console.log(targetIndex, target);
+
+				if (field === "translatedLyric" || field === "romanLyric") {
+					const similarity = calcSimularity(target.originalLyric || "", line.lyric || "");
+					const maxLen = Math.max((target.originalLyric || "").length, (line.lyric || "").length);
+					if (maxLen > 0 && similarity / maxLen < 0.2) {
+						return; // 忽略高度相似的翻译
+					}
+				}
+
 				target[field] = target[field] || "";
 				if (target[field].length > 0) {
 					target[field] += " ";

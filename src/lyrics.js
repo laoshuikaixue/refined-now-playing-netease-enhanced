@@ -1263,6 +1263,7 @@ function Interlude(props) {
 			return {
 				transitionDuration: `200ms`,
 				transitionDelay: `0ms`,
+				opacity: 0,
 			};
 		}
 		if (props.playState == false && dot.time + dot.duration - props.currentTime > 0) {
@@ -1270,24 +1271,42 @@ function Interlude(props) {
 				transitionDuration: `0s`,
 				transitionDelay: `0ms`,
 				opacity: Math.max(0.2 + 0.7 * (props.currentTime - dot.time) / dot.duration, 0.2),
-				transform: `scale(${Math.max(0.9 + 0.1 * (props.currentTime - dot.time) / dot.duration * 2, 0.8)}px)`
+				transform: `scale(${Math.max(0.9 + 0.1 * (props.currentTime - dot.time) / dot.duration * 2, 0.8)})`
 			};
 		}
 		if (dotContainerRef.current) dotContainerRef.current.classList.remove('pause-breath');
+
+		// 改进动画：如果已经过了该点的时间，则保持高亮；如果还没到，则渐显
+		// 参考 AMLL 的逻辑，在间奏结束前 375ms 开始淡出
+		const isEnding = props.line.time + props.line.duration - props.currentTime < 375;
+		
 		return {
 			transitionDuration: `${dot.duration}ms, ${dot.duration + 150}ms`,
-			transitionDelay: `${dot.time - props.currentTime}ms`
+			transitionDelay: `${dot.time - props.currentTime}ms`,
+			opacity: isEnding ? 0 : undefined,
 		};
 	};
+
+	const [forceUpdate, setForceUpdate] = useState(0);
 
 	useEffect(() => {
 		if (props.currentLine != props.id) return;
 		if (!dotContainerRef.current) return;
+		
 		dotContainerRef.current.classList.add('force-refresh');
 		setTimeout(() => {
 			dotContainerRef.current?.classList?.remove('force-refresh');
 		}, 6);
-	}, [props.seekCounter]);
+
+		// 在间奏结束前 375ms 触发一次重渲染以触发淡出
+		const timeUntilEnd = props.line.time + props.line.duration - props.currentTime - 375;
+		if (timeUntilEnd > 0) {
+			const timeout = setTimeout(() => {
+				setForceUpdate(v => v + 1);
+			}, timeUntilEnd);
+			return () => clearTimeout(timeout);
+		}
+	}, [props.seekCounter, props.currentLine, props.line.time, props.line.duration]);
 
 	return (
 		<div className="rnp-interlude-inner" ref={dotContainerRef}>

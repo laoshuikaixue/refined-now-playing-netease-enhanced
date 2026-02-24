@@ -152,7 +152,7 @@ body.original-lyric-bold {
 	}
 	&:not([offset='0']):not(.highlight-force) > div{
 		.rnp-interlude-dot {
-			opacity: 0.2;
+			opacity: 0;
 			transform: scale(0.9);
 		}
 	}
@@ -182,13 +182,14 @@ body.original-lyric-bold {
 		}
 		.rnp-interlude-dot {
 			display: inline-block;
-			width: 0.7em !important;
-			height: 0.7em !important;
+			width: 0.6em !important;
+			height: 0.6em !important;
 			aspect-ratio: 1/1;
 			border-radius: 100%;
 			background-color: var(--rnp-accent-color-shade-2);
+			transition: opacity 0.3s ease, transform 0.3s ease;
 			&:not(:last-child) {
-				margin-right: 0.5em;
+				margin-right: 0.4em;
 			}
 		}
 		.force-refresh > .rnp-interlude-dot {

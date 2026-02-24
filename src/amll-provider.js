@@ -182,6 +182,11 @@ const parseTTML = (ttmlContent) => {
                                                 word: subText
                                             });
                                         }
+                                    } else if (subNode.nodeType === Node.TEXT_NODE) {
+                                        const subText = subNode.textContent;
+                                        if (bgWords.length > 0 && subText) {
+                                            bgWords[bgWords.length - 1].word += subText;
+                                        }
                                     }
                                 }
                             }
@@ -292,19 +297,11 @@ const removeParentheses = (text) => {
 }
 
 const removeLeadingParenthesis = (text) => {
-    let t = text.trim();
-    if (t.startsWith('(') || t.startsWith('（')) {
-        return t.substring(1);
-    }
-    return text;
+    return text.replace(/^[\s\u3000]*[((（]/, '');
 }
 
 const removeTrailingParenthesis = (text) => {
-    let t = text.trim();
-    if (t.endsWith(')') || t.endsWith('）')) {
-        return t.slice(0, -1);
-    }
-    return text;
+    return text.replace(/[)）][\s\u3000]*$/, '');
 }
 
 const parseTime = (timeStr) => {

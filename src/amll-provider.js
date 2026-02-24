@@ -146,6 +146,11 @@ const parseTTML = (ttmlContent) => {
                                 pendingText += text;
                             }
                         }
+                        // 如果是空白字符（通常是空格），也需要追加到翻译和罗马音中，防止单词粘连
+                        if (!text.trim() && text.length > 0 && !text.includes('\n')) {
+                             if (spanTranslatedLyric.length > 0) spanTranslatedLyric += text;
+                             if (spanRomanLyric.length > 0) spanRomanLyric += text;
+                        }
                     } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName.toLowerCase() === 'span') {
                         const span = node;
                         const spanBegin = parseTime(span.getAttribute("begin"));
@@ -269,8 +274,8 @@ const parseTTML = (ttmlContent) => {
                     text: textContent,
                     role: role,
                     isDuet: isDuet, 
-                    translatedLyric: spanTranslatedLyric,
-                    romanLyric: spanRomanLyric,
+                    translatedLyric: spanTranslatedLyric.trim(),
+                    romanLyric: spanRomanLyric.trim(),
                     bgLyric: "",
                     isBG: isLineBG
                 });

@@ -139,10 +139,12 @@ function alignLyrics(
 				// 检查内容相似度，如果翻译内容和原文太相似，则忽略
 				const similarity = calcSimularity(line.originalLyric, other.lyric);
 				const maxLen = Math.max(line.originalLyric.length, other.lyric.length);
-				// 如果相似度非常高（编辑距离很小），且长度不为0，则认为是重复内容
-				// 例如：Hello -> Hello (dist=0), maxLen=5, ratio=0 < 0.2 -> ignore
-				// Hello -> Hella (dist=1), maxLen=5, ratio=0.2 -> keep
-				if (maxLen > 0 && similarity / maxLen < 0.2) {
+				// 如果几乎完全相同（编辑距离小于长度 5%），才认为是没有翻译的重复内容。
+				// 双语歌词常见「英文副歌原样保留 + 只译短尾」的写法，比如：
+				//   yes ya gonna jump   yes ya gonna jump   突き抜けてく
+				//   yes ya gonna jump   yes ya gonna jump   穿破障碍
+				// 此时相似度约 0.09~0.13，若阈值仍用 0.2 会被误判成重复而整行丢失。
+				if (maxLen > 0 && similarity / maxLen < 0.05) {
 					// 忽略高度相似的翻译
 				} else {
 					(line as any)[key] = other.lyric;
@@ -305,7 +307,7 @@ export function parseLyric(
 				if (field === "translatedLyric" || field === "romanLyric") {
 					const similarity = calcSimularity(target.originalLyric || "", line.lyric || "");
 					const maxLen = Math.max((target.originalLyric || "").length, (line.lyric || "").length);
-					if (maxLen > 0 && similarity / maxLen < 0.2) {
+					if (maxLen > 0 && similarity / maxLen < 0.05) {
 						return; // 忽略高度相似的翻译
 					}
 				}

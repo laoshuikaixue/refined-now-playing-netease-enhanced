@@ -55,6 +55,18 @@ export const PURE_MUSIC_LYRIC_DATA = {
 
 const ALIGN_TOLERANCE_MS = 300;
 
+/**
+ * 署名行（作词/作曲/编曲……）与空白行的判定。
+ * 这些行不属于歌词，不应参与译文配对，否则会把第一句译文抢走。
+ */
+const CREDIT_PATTERN =
+	/^(?:(?:作词|作曲|编曲|制作|出品|监制|混音|母带|和声|合声|录音|吉他|贝斯|鼓|键盘|弦乐|演唱|独奏|伴奏|配唱|人声|演奏|乐器|助理|策划|美术|设计|统筹|发行|企划|执行|词|曲|Lyric|Composer|Arranger|Producer|Mixing|Mastering|Guitar|Bass|Drum|Vocal|Recording|Music|Instrument|Solo|Assistant|Supervisor)[^:：]{0,30}[:：]|[A-Za-z][A-Za-z /&'’.\-]{1,30}[:：][^:：]{0,40}$)/i;
+
+const isCreditOrEmpty = (text?: string) => {
+	const trimmed = (text ?? "").trim();
+	return trimmed.length === 0 || CREDIT_PATTERN.test(trimmed);
+};
+
 const simularityCache: Record<string, number> = {};
 function calcSimularity(a: string, b: string) {
 	if (typeof(a) === "undefined") a = "";
@@ -108,16 +120,31 @@ function alignLyrics(
 		const other = otherLyrics[j];
 		const diff = line.time - other.time;
 
+		// 署名行 / 空白行不参与配对：只跳过这一行原文，不消耗译文
+		if (isCreditOrEmpty(line.originalLyric)) {
+			i++;
+			continue;
+		}
+
+		// 译文轨里的空行同样不参与配对：
+		// 它会和相邻原文按时间配上，占掉一次匹配，导致后面整段错位一格
+		if (!(other.lyric ?? "").trim()) {
+			j++;
+			continue;
+		}
+
 		if (Math.abs(diff) <= ALIGN_TOLERANCE_MS) {
 			// 匹配成功
 			if (key === "translatedLyric" || key === "romanLyric") {
 				// 检查内容相似度，如果翻译内容和原文太相似，则忽略
 				const similarity = calcSimularity(line.originalLyric, other.lyric);
 				const maxLen = Math.max(line.originalLyric.length, other.lyric.length);
-				// 如果相似度非常高（编辑距离很小），且长度不为0，则认为是重复内容
-				// 例如：Hello -> Hello (dist=0), maxLen=5, ratio=0 < 0.2 -> ignore
-				// Hello -> Hella (dist=1), maxLen=5, ratio=0.2 -> keep
-				if (maxLen > 0 && similarity / maxLen < 0.2) {
+				// 如果几乎完全相同（编辑距离小于长度 5%），才认为是没有翻译的重复内容。
+				// 双语歌词常见「英文副歌原样保留 + 只译短尾」的写法，比如：
+				//   yes ya gonna jump   yes ya gonna jump   突き抜けてく
+				//   yes ya gonna jump   yes ya gonna jump   穿破障碍
+				// 此时相似度约 0.09~0.13，若阈值仍用 0.2 会被误判成重复而整行丢失。
+				if (maxLen > 0 && similarity / maxLen < 0.05) {
 					// 忽略高度相似的翻译
 				} else {
 					(line as any)[key] = other.lyric;
@@ -206,11 +233,14 @@ export function parseLyric(
 
 			//console.log(JSON.parse(JSON.stringify(originalLyrics)), JSON.parse(JSON.stringify(lyric)));
 			originalLyrics.forEach((line) => {
+				// 署名行 / 空白行不参与配对
+				if (isCreditOrEmpty(line.lyric)) return;
 				//let target = findLast(lyric, (v) => v.time === line.time);
 				let target: LyricPureLine | null = null;
 				if (attachMatchingMode === 'equal') {
 					//target = findLast(lyric, (v) => v.time === line.time);
-					target = findLast(lyric, (v) => Math.abs(v.time - line.time) < 20)
+					// 原文轨与译文轨的时间戳普遍相差 50~400ms，20ms 容差过窄
+					target = findLast(lyric, (v) => Math.abs(v.time - line.time) < 500)
 				} else {
 					lyric.forEach((v) => {
 						if (target) {
@@ -261,45 +291,23 @@ export function parseLyric(
 					}
 				});
 				//console.log(line, index, targetIndex);
-				let sequence = [targetIndex];
-				for (let offset = 1; offset <= 5; offset++) {
-					if (targetIndex - offset >= 0) sequence.push(targetIndex - offset);
-					if (targetIndex + offset < processed.length) sequence.push(targetIndex + offset);
-				}/*
-				if (targetIndex - 1 >= 0) sequence.push(targetIndex - 1);
-				if (targetIndex + 1 < processed.length) sequence.push(targetIndex + 1);
-				if (targetIndex - 2 >= 0) sequence.push(targetIndex - 2);
-				if (targetIndex + 2 < processed.length) sequence.push(targetIndex + 2);*/
-
-				sequence = sequence.reverse();
-				
-				//console.log(sequence);
-
-				//let minSimilarity = 1000000000;
-				let minWeight = 1000000000;
-
-				for (let index of sequence) {
-					const v = processed[index];
-					const similarity = calcSimularity(line.originalLyric as string, v.originalLyric as string);
-					const weight = similarity * 1000 + (v[field] ? 1 : 0);
-					//console.log("similarity", similarity, line.originalLyric, v.originalLyric);
-					//console.log("weight", index, weight, line.originalLyric, v.originalLyric);
-					if (weight < minWeight) {
-						minWeight = weight;
-						targetIndex = index;
-					}
-				}
+				// 时间戳已能对齐，直接用时间最近的逐字行；
+				// 原先还会在 ±5 行内按编辑距离再挑一次，但上一步没配到原文时
+				// 编辑距离会退化成「比长度」，反而挑错行。
 
 				//console.log(targetIndex);
 
 				const target = processed[targetIndex];
+
+				// 署名行 / 空白行不接收译文
+				if (isCreditOrEmpty(target.originalLyric)) return;
 
 				//console.log(targetIndex, target);
 
 				if (field === "translatedLyric" || field === "romanLyric") {
 					const similarity = calcSimularity(target.originalLyric || "", line.lyric || "");
 					const maxLen = Math.max((target.originalLyric || "").length, (line.lyric || "").length);
-					if (maxLen > 0 && similarity / maxLen < 0.2) {
+					if (maxLen > 0 && similarity / maxLen < 0.05) {
 						return; // 忽略高度相似的翻译
 					}
 				}
